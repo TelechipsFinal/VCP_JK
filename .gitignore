@@ -1,0 +1,8 @@
+*.o
+*.d
+*.rom
+*.bin
+*.map
+*.elf
+obj/
+output/

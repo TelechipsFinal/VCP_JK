@@ -32,6 +32,9 @@
 /* I2S Driver Enable */
 #define MCU_BSP_SUPPORT_DRIVER_I2S      1
 
+/* 마이크 수신 기능 활성화 */
+#define AUDIO_RX_ENABLE
+
 #endif  // ( MCU_BSP_SUPPORT_APP_BASE == 1 )
 
 #endif  // MCU_BSP_APP_CFG_HEADER

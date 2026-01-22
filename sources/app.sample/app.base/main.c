@@ -37,9 +37,11 @@
     #include <console.h>
 #endif  // ( MCU_BSP_SUPPORT_APP_CONSOLE == 1 )
 
+/*
 #if ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
     #include <can_demo.h>
 #endif  // ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
+*/
 
 #if ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
     #include <idle.h>
@@ -66,7 +68,7 @@ static uint32                           gALiveCount;
 /* --- ANC 마이크 관련 변수 --- */
 static I2SConfig_t      g_stAncMicCfg;
 static uint32           AncTaskID = 0;
-static uint32           AncTaskStk[1024]; // 스택 넉넉하게 1024
+static uint32           AncTaskStk[256];
 static uint32           g_uiAncMicDmaBuf[128] __attribute__((aligned(4)));
 
 /*
@@ -211,9 +213,11 @@ static void AppTaskCreate(void)
     KEY_AppCreate();
 #endif  // ( MCU_BSP_SUPPORT_APP_KEY == 1 )
 
+/*
 #if ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
     CAN_DemoCreateApp();
 #endif  // ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
+*/
 
 #if ( MCU_BSP_SUPPORT_APP_FW_UPDATE == 1 )
     CreateFWUDTask();
