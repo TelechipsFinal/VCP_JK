@@ -29,6 +29,8 @@
 #define ACFG_TASK_NORMAL_STK_SIZE       (128U)
 /* medium measn that task has some fucnction call or small local variables/arrays   */
 #define ACFG_TASK_MEDIUM_STK_SIZE       (256U)
+/* I2S Driver Enable */
+#define MCU_BSP_SUPPORT_DRIVER_I2S      1
 
 #endif  // ( MCU_BSP_SUPPORT_APP_BASE == 1 )
 
