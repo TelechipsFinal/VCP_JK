@@ -21,6 +21,7 @@
 #include <app_cfg.h>
 #include <debug.h>
 #include <bsp.h>
+#include <i2s.h>
 
 #if (APLT_LINUX_SUPPORT_SPI_DEMO == 1)
     #include <spi_eccp.h>
@@ -62,6 +63,12 @@
 uint32                                  gALiveMsgOnOff;
 static uint32                           gALiveCount;
 
+/* --- ANC 마이크 관련 변수 --- */
+static I2SConfig_t      g_stAncMicCfg;
+static uint32           AncTaskID = 0;
+static uint32           AncTaskStk[1024]; // 스택 넉넉하게 1024
+static uint32           g_uiAncMicDmaBuf[128] __attribute__((aligned(4)));
+
 /*
 ***************************************************************************************************
 *                                         FUNCTION PROTOTYPES
@@ -94,6 +101,10 @@ static void DisplayOTPInfo
 *                                         FUNCTIONS
 ***************************************************************************************************
 */
+
+static void App_AncMic_Init(void);
+static void Anc_MicReadTask(void * pArg);
+
 /*
 ***************************************************************************************************
 *                                          cmain
@@ -218,6 +229,18 @@ static void AppTaskCreate(void)
     SPILED_CreateAppTask();
 #endif  // ( MCU_BSP_SUPPORT_APP_SPI_LED == 1 )
 
+// 1. 하드웨어 초기화
+App_AncMic_Init();
+
+// 2. 태스크 생성
+(void)SAL_TaskCreate(&AncTaskID,
+                        (const uint8 *)"ANC Mic Task",
+                        (SALTaskFunc) &Anc_MicReadTask,
+                        &AncTaskStk[0],
+                        1024,
+                        SAL_PRIO_APP_CFG + 5,
+                        NULL);
+
 }
 
 static void DisplayAliveLog(void)
@@ -315,6 +338,70 @@ static void DisplayOTPInfo(void)
 #else
     mcu_printf("    HSM    READY : %d\n",    hsm_ready);
 #endif
+}
+
+/* ANC 마이크 초기화 함수 */
+static void App_AncMic_Init(void)
+{
+    (void)SAL_MemSet(&g_stAncMicCfg, 0, sizeof(I2SConfig_t));
+
+    g_stAncMicCfg.i2sHwCh         = I2S_CH1;  // CH1 (GPC 핀)
+    g_stAncMicCfg.i2sMode         = I2S_MASTER_MODE;
+    g_stAncMicCfg.i2sFormat       = I2S_FORMAT_I2S;
+    g_stAncMicCfg.i2sNumCh        = I2S_STEREO;
+    g_stAncMicCfg.i2sSampleRate   = I2S_SAMPLE_RATE_48000;
+    g_stAncMicCfg.i2sBitPerSample = I2S_BIT_DEPTH_16;
+    g_stAncMicCfg.i2sBclkDiv      = I2S_BCLK_DIV_64;
+    g_stAncMicCfg.i2sMclkDiv      = I2S_MCLK_DIV_8;
+
+    /* 핀 & 클럭 설정 */
+    (void)I2S_SetGpiofunction(&g_stAncMicCfg);
+    (void)I2S_SetClock(&g_stAncMicCfg);
+
+    /* DMA 버퍼 주소 연결 */
+    g_stAncMicCfg.i2sStreamInfo.i2sIn.i2sDmaAddr = &g_uiAncMicDmaBuf[0];
+    g_stAncMicCfg.i2sStreamInfo.i2sIn.i2sBufferBytes = sizeof(g_uiAncMicDmaBuf);
+    g_stAncMicCfg.i2sStreamInfo.i2sIn.i2sPeriodBytes = sizeof(g_uiAncMicDmaBuf) / 2;
+
+    /* [중요] 초기화 순서: DMAInit -> 설정 -> SetTransferSize -> Enable */
+    (void)I2S_DMAInit(&g_stAncMicCfg.i2sStreamInfo, I2S_DIN);
+
+    I2S_DaifSetting(&g_stAncMicCfg);
+    I2S_RxAdmaSetting(&g_stAncMicCfg);
+    I2S_SetTransferSize(&g_stAncMicCfg, I2S_DIN);
+
+    (void)I2S_Irq_Enable(I2S_DIN); 
+    (void)I2S_DMAEnable(I2S_DIN);
+    (void)I2S_Enable(I2S_DIN);
+    
+    mcu_printf("--- ANC Mic I2S CH1 Init Complete! ---\n");
+}
+
+/* 데이터 읽기 태스크 */
+static void Anc_MicReadTask(void * pArg)
+{
+    (void)pArg;
+    uint32 read_buf[8];
+    uint32 avail = 0;
+    
+    (void)SAL_TaskSleep(1000); // 1초 대기
+
+    while (1)
+    {
+        avail = I2S_GetAvailable(&g_stAncMicCfg, I2S_DIN);
+
+        if (avail > 0) 
+        {
+            if (I2S_PcmRead(&g_stAncMicCfg, (void *)&read_buf[0], 4) > 0) {
+                // 데이터 출력 (Raw 값)
+                mcu_printf("MIC: %d\n", (int16)(read_buf[0] & 0xFFFF));
+            }
+        }
+        else 
+        {
+            (void)SAL_TaskSleep(10);
+        }
+    }
 }
 
 #endif  // ( MCU_BSP_SUPPORT_APP_BASE == 1 )
