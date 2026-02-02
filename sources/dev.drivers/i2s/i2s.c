@@ -26,6 +26,7 @@
 #include <clock_dev.h>
 #include <clock.h>
 #include <bsp.h>
+#include "gpio.h"
 
 /*
 ***************************************************************************************************
@@ -71,7 +72,7 @@ I2SRetCode_t I2S_SetGpiofunction(const I2SConfig_t* psI2sConf)
     {
         /* MCLK,            BCLK,           LRCK,           DAO,            DAI,        FUNC_NUM */
         {I2S_MCLK_CH0,  I2S_BCLK_CH0,   I2S_LRCK_CH0,   I2S_DAO_CH0,    I2S_DAI_CH0,    1UL},
-        {I2S_MCLK_CH1,  I2S_BCLK_CH1,   I2S_LRCK_CH1,   I2S_DAO_CH1,    TCC_GPNONE,     2UL},
+        {TCC_GPNONE,    GPIO_GPC(12UL), GPIO_GPC(13UL), GPIO_GPC(14UL), GPIO_GPC(15UL), 1UL},
         {I2S_MCLK_CH2,  I2S_BCLK_CH2,   I2S_LRCK_CH2,   I2S_DAO_CH2,    TCC_GPNONE,     2UL},
     };
 

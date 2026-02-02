@@ -30,6 +30,9 @@
 *                                             DEFINITIONS
 **************************************************************************************************/
 
+/* 마이크 수신(RX) 기능 강제 활성화 */
+#define AUDIO_RX_ENABLE
+
 #if (DEBUG_ENABLE)
 #define I2S_D(fmt, args...)             {LOGD(DBG_TAG_I2S, fmt, ## args)}
 #define I2S_E(fmt, args...)             {LOGE(DBG_TAG_I2S, fmt, ## args)}

@@ -13,6 +13,8 @@
 ***************************************************************************************************
 */
 
+#if 0
+
 #if ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
 
 #include <app_cfg.h>
@@ -75,3 +77,4 @@ void IDLE_CreateTask(void)
 
 #endif  // ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
 
+#endif

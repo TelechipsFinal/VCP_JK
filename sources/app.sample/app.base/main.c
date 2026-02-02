@@ -1,321 +1,118 @@
 // SPDX-License-Identifier: Apache-2.0
-
 /*
 ***************************************************************************************************
-*
-*   FileName : main.c
-*
-*   Copyright (c) Telechips Inc.
-*
-*   Description :
-*
-*
+* FileName : main.c
+* Description : Final Step - Official Audio Test Sequence
 ***************************************************************************************************
 */
 
 #if ( MCU_BSP_SUPPORT_APP_BASE == 1 )
 
 #include <main.h>
-
 #include <sal_api.h>
 #include <app_cfg.h>
 #include <debug.h>
 #include <bsp.h>
+#include <i2s.h>
+#include <clock.h>
+#include <clock_dev.h>
+#include <gpio.h>
+#include <mpu.h> // MPU_GetDMABaseAddress 사용을 위해 추가
 
-#if (APLT_LINUX_SUPPORT_SPI_DEMO == 1)
-    #include <spi_eccp.h>
-#endif
-#if (APLT_LINUX_SUPPORT_POWER_CTRL == 1)
-    #include <power_app.h>
-#endif
-#if ( MCU_BSP_SUPPORT_APP_KEY == 1)
-    #include <key.h>
-#endif  // ( MCU_BSP_SUPPORT_APP_KEY == 1 )
+uint32 gALiveMsgOnOff = 1;
 
-#if ( MCU_BSP_SUPPORT_APP_CONSOLE == 1 )
-    #include <console.h>
-#endif  // ( MCU_BSP_SUPPORT_APP_CONSOLE == 1 )
+/* 예제와 동일한 버퍼 크기 설정 */
+#define AUDIO_PERIOD_SIZE  0x400U
+#define AUDIO_BUFFER_SIZE  0x2000U
 
-#if ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
-    #include <can_demo.h>
-#endif  // ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
+static I2SConfig_t g_I2sConfig;
+extern uint32 I2S_GetRxDaCdar(void);
 
-#if ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
-    #include <idle.h>
-#endif  // ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
+static void Main_StartTask(void * pArg);
+static void Audio_OfficialTask(void * pArg);
 
-#if ( MCU_BSP_SUPPORT_APP_SPI_LED == 1 )
-    #include <spi_led.h>
-#endif  // ( MCU_BSP_SUPPORT_APP_SPI_LED == 1 )
-
-#if ( MCU_BSP_SUPPORT_APP_FW_UPDATE == 1 )
-    #include "fwupdate.h"
-#elif ( MCU_BSP_SUPPORT_APP_FW_UPDATE_ECCP == 1 )
-    #include "fwupdate.h"
-#endif
-
-/*
-***************************************************************************************************
-*                                         GLOBAL VARIABLES
-***************************************************************************************************
-*/
-uint32                                  gALiveMsgOnOff;
-static uint32                           gALiveCount;
-
-/*
-***************************************************************************************************
-*                                         FUNCTION PROTOTYPES
-***************************************************************************************************
-*/
-
-static void Main_StartTask
-(
-    void *                              pArg
-);
-
-static void AppTaskCreate
-(
-    void
-);
-
-static void DisplayAliveLog
-(
-    void
-);
-
-static void DisplayOTPInfo
-(
-    void
-);
-
-
-/*
-***************************************************************************************************
-*                                         FUNCTIONS
-***************************************************************************************************
-*/
-/*
-***************************************************************************************************
-*                                          cmain
-*
-* This is the standard entry point for C code.
-*
-* Notes
-*   It is assumed that your code will call main() once you have performed all necessary
-*   initialization.
-*
-***************************************************************************************************
-*/
 void cmain (void)
 {
-    static uint32           AppTaskStartID = 0;
-    static uint32           AppTaskStartStk[ACFG_TASK_MEDIUM_STK_SIZE];
-    SALRetCode_t            err;
-    SALMcuVersionInfo_t     versionInfo = {0,0,0,0};
-
+    static uint32 AppTaskStartID = 0;
+    static uint32 AppTaskStartStk[ACFG_TASK_MEDIUM_STK_SIZE];
     (void)SAL_Init();
-
-    BSP_PreInit(); /* Initialize basic BSP functions */
-
-#if ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
-    (void)CAN_DemoInitialize();
-#endif  // ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
-
-    BSP_Init(); /* Initialize BSP functions */
-
-    (void)SAL_GetVersion(&versionInfo);
-    mcu_printf("\n===============================\n");
-    mcu_printf("    MCU BSP Version: V%d.%d.%d\n",
-           versionInfo.viMajorVersion,
-           versionInfo.viMinorVersion,
-           versionInfo.viPatchVersion);
-    mcu_printf("-------------------------------\n");
-    DisplayOTPInfo();
-    mcu_printf("===============================\n\n");
-
-    // create the first app task...
-    err = (SALRetCode_t)SAL_TaskCreate(&AppTaskStartID,
-                         (const uint8 *)"App Task Start",
-                         (SALTaskFunc) &Main_StartTask,
-                         &AppTaskStartStk[0],
-                         ACFG_TASK_MEDIUM_STK_SIZE,
-                         SAL_PRIO_APP_CFG,
-                         NULL);
-
-    if (err == SAL_RET_SUCCESS)
-    {
-        // start woring os.... never return from this function
-        (void)SAL_OsStart();
-    }
+    BSP_PreInit(); 
+    BSP_Init(); 
+    
+    mcu_printf("\n[System] Starting Official Audio Test Sequence...\n");
+    (void)SAL_TaskCreate(&AppTaskStartID, (const uint8 *)"Start", (SALTaskFunc) &Main_StartTask, 
+                         &AppTaskStartStk[0], ACFG_TASK_MEDIUM_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+    (void)SAL_OsStart();
 }
 
-/*
-***************************************************************************************************
-*                                          Main_StartTask
-*
-* This is an example of a startup task.
-*
-* Notes
-*   As mentioned in the book's text, you MUST initialize the ticker only once multitasking has
-*   started.
-*
-*   1) The first line of code is used to prevent a compiler warning because 'pArg' is not used.
-*      The compiler should not generate any code for this statement.
-*
-***************************************************************************************************
-*/
 static void Main_StartTask(void * pArg)
 {
+    (void)pArg; (void)SAL_OsInitFuncs();
+    static uint32 AudioTaskID;
+    static uint32 AudioTaskStk[ACFG_TASK_MEDIUM_STK_SIZE]; 
+    (void)SAL_TaskCreate(&AudioTaskID, (const uint8 *)"AudioOfficial", (SALTaskFunc) &Audio_OfficialTask,
+                         &AudioTaskStk[0], ACFG_TASK_MEDIUM_STK_SIZE, SAL_PRIO_APP_CFG, NULL);
+    while (1) { (void)SAL_TaskSleep(5000); }
+}
+
+static void Audio_OfficialTask(void * pArg)
+{
     (void)pArg;
-    (void)SAL_OsInitFuncs();
+    uint32 tick = 0;
+    
+    /* 예제 방식의 버퍼 주소 획득 (Non-cacheable area) */
+    uint32 * AUDIO_RxBuffer = (uint32 *)MPU_GetDMABaseAddress();
+    
+    SAL_TaskSleep(3000);
+    mcu_printf("\n========== OFFICIAL SEQUENCE START ==========\n");
 
-    /* Service Init*/
+    /* 1. I2S 기본 설정 (audio_test.c 방식) */
+    g_I2sConfig.i2sHwCh         = I2S_CH0;
+    g_I2sConfig.i2sMode         = I2S_MASTER_MODE;
+    g_I2sConfig.i2sFormat       = I2S_FORMAT_I2S;
+    g_I2sConfig.i2sNumCh        = I2S_STEREO;
+    g_I2sConfig.i2sLRmode       = I2S_LRMODE_OFF;
+    g_I2sConfig.i2sBitPerSample = I2S_BIT_DEPTH_16;
+    g_I2sConfig.i2sSampleRate   = I2S_SAMPLE_RATE_32000;
+    g_I2sConfig.i2sBclkDiv      = I2S_BCLK_DIV_64;
+    g_I2sConfig.i2sMclkDiv      = I2S_MCLK_DIV_6;
 
-    /* Create application tasks */
-    AppTaskCreate();
+    /* 수신 스트림 정보 설정 */
+    g_I2sConfig.i2sStreamInfo.i2sIn.i2sDmaAddr = AUDIO_RxBuffer;
+    g_I2sConfig.i2sStreamInfo.i2sIn.i2sPeriodBytes = AUDIO_PERIOD_SIZE;
+    g_I2sConfig.i2sStreamInfo.i2sIn.i2sBufferBytes = AUDIO_BUFFER_SIZE;
+    g_I2sConfig.i2sStreamInfo.i2sIn.i2sThresholdBytes = AUDIO_BUFFER_SIZE - AUDIO_PERIOD_SIZE;
 
-    while (1)
-    {  /* Task body, always written as an infinite loop.       */
-        DisplayAliveLog();
-        //mcu_printf("\n MCU Idle !!!");
-        (void)SAL_TaskSleep(5000);
-    }
-}
+    /* 2. 하드웨어 초기화 시퀀스 (예제 핵심 로직) */
+    I2S_SWReset(SALEnabled);  // 리셋 시작
+    I2S_SWReset(SALDisabled); // 리셋 해제
 
-static void AppTaskCreate(void)
-{
-#if (APLT_LINUX_SUPPORT_SPI_DEMO == 1)
-    ECCP_InitSPIManager();
-#endif  
-#if (APLT_LINUX_SUPPORT_POWER_CTRL == 1)
-    POWER_APP_StartDemo();
-#endif
+    I2S_SetGpiofunction(&g_I2sConfig); // 공식 GPIO 설정 함수
+    I2S_SetClock(&g_I2sConfig);        // 공식 클럭 설정 함수
+    I2S_DaifSetting(&g_I2sConfig);     // 인터페이스 설정
 
-  
-#if ( MCU_BSP_SUPPORT_APP_CONSOLE == 1 )
-    CreateConsoleTask();
-#endif  // ( MCU_BSP_SUPPORT_APP_CONSOLE == 1 )
+    I2S_RxAdmaSetting(&g_I2sConfig);   // RX DMA 설정
+    I2S_SetTransferSize(&g_I2sConfig, I2S_DIN); // 전송 크기 설정
 
-#if ( MCU_BSP_SUPPORT_APP_KEY == 1 )
-    KEY_AppCreate();
-#endif  // ( MCU_BSP_SUPPORT_APP_KEY == 1 )
+    I2S_DAMREnable();                  // ★ DMA 모드 활성화 ★
+    I2S_FifoClear(I2S_DIN);            // FIFO 정리
 
-#if ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
-    CAN_DemoCreateApp();
-#endif  // ( MCU_BSP_SUPPORT_CAN_DEMO == 1 )
+    /* 3. 활성화 */
+    I2S_Enable(I2S_DIN);
+    mcu_printf("[Audio] Official Setup Done. Buffer: 0x%08X\n", (uint32)AUDIO_RxBuffer);
 
-#if ( MCU_BSP_SUPPORT_APP_FW_UPDATE == 1 )
-    CreateFWUDTask();
-#elif ( MCU_BSP_SUPPORT_APP_FW_UPDATE_ECCP == 1 )
-    CreateFWUDTask();
-#endif
-
-#if ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
-    IDLE_CreateTask();
-#endif  // ( MCU_BSP_SUPPORT_APP_IDLE == 1 )
-
-#if ( MCU_BSP_SUPPORT_APP_SPI_LED == 1)
-    SPILED_CreateAppTask();
-#endif  // ( MCU_BSP_SUPPORT_APP_SPI_LED == 1 )
-
-}
-
-static void DisplayAliveLog(void)
-{
-    if (gALiveMsgOnOff != 0U)
-    {
-        mcu_printf("\n %d", gALiveCount);
-
-        gALiveCount++;
-
-        if(gALiveCount >= MAIN_UINT_MAX_NUM)
-        {
-            gALiveCount = 0;
+    while(1) {
+        uint32 current_ptr = I2S_GetRxDaCdar();
+        if (tick % 100 == 0) {
+            mcu_printf("[Monitor] DMA_PTR: 0x%08X", current_ptr);
+            if (current_ptr != 0) {
+                mcu_printf(" -> SUCCESS! Data Flowing.\n");
+            } else {
+                mcu_printf(" -> Still Zero. Checking B21 voltage...\n");
+            }
         }
-    }
-    else
-    {
-        gALiveCount = 0;
+        tick++;
+        SAL_TaskSleep(10);
     }
 }
-
-#define LDT1_AREA_ADDR  0xA1011800U
-#define PMU_REG_ADDR    0xA0F28000U
-
-static void DisplayOTPInfo(void)
-{
-    volatile uint32 *ldt1Addr;
-    volatile uint32 *chipNameAddr;
-    volatile uint32 *remapAddr;
-    volatile uint32 *hsmStatusAddr;
-    uint32          chipName = 0;
-    uint32          dualBankVal = 0;
-    uint32          dual_bank = 0;
-    uint32          expandFlashVal = 0;
-    uint32          expand_flash = 0;
-    uint32          remap_mode = 0;
-    uint32          hsm_ready = 0;
-
-    //----------------------------------------------------------------
-    // OTP LDT1 Read
-    // [11:0]Dual_Bank_Selection, [59:48]EXPAND_FLASH
-    // Dual_Bank_Sel: [0xC0][11: 0] & [0xD0][11: 0] & [0xE0][11: 0] & [0xF0][11: 0]
-    // EXPAND_FLASH : [0xC4][27:16] & [0xD4][27:16] & [0xE4][27:16] & [0xF4][27:16]
-    // HwMC_PRG_FLS_LDT1: 0xA1011800
-
-    ldt1Addr = (volatile uint32 *)(LDT1_AREA_ADDR + 0x00C0);
-    chipNameAddr = (volatile uint32 *)(LDT1_AREA_ADDR + 0x0300);
-    remapAddr = (volatile uint32 *)(PMU_REG_ADDR);
-    hsmStatusAddr = (volatile uint32 *)(PMU_REG_ADDR + 0x0020);
-
-    chipName = *chipNameAddr;
-    chipName &= 0x000FFFFF;
-
-    dualBankVal = ldt1Addr[ 0];
-    expandFlashVal = ldt1Addr[ 1];
-
-    dualBankVal &= ldt1Addr[ 4];
-    expandFlashVal &= ldt1Addr[ 5];
-
-    dualBankVal &= ldt1Addr[ 8];
-    expandFlashVal &= ldt1Addr[ 9];
-
-    dualBankVal &= ldt1Addr[12];
-    expandFlashVal &= ldt1Addr[13];
-
-    dualBankVal = (dualBankVal >> 0) & 0x0FFF;
-    expandFlashVal  = (expandFlashVal >> 16) & 0x0FFF;
-
-    dual_bank = (dualBankVal == 0x0FFF) ? 0 : 1;            // (single_bank : dual_bank)
-    expand_flash  = (expandFlashVal  == 0x0000) ? 0 : 1;    // (only_eFlash : use_extSNOR)
-
-    remap_mode = remapAddr[ 0];
-
-    mcu_printf("    CHIP   NAME  : %x\n",    chipName);
-    mcu_printf("    DUAL   BANK  : %d\n",    dual_bank);
-    mcu_printf("    EXPAND FLASH : %d\n",    expand_flash);
-    mcu_printf("    REMAP  MODE  : %d\n",    (remap_mode >> 16));
-
-    hsm_ready = hsmStatusAddr[ 0];
-    hsm_ready = (hsm_ready >> 2) & 0x0001;
-#if 0
-    if(hsm_ready)
-    {
-        mcu_printf("    HSM    READY : %d\n",    hsm_ready);
-    }
-    else
-    {
-        while(hsm_ready != 1)
-        {
-            mcu_printf("    HSM    READY : %d\n",    hsm_ready);
-            mcu_printf("    wait...\n");
-            hsm_ready = (hsm_ready >> 2) & 0x0001;
-        }
-    }
-#else
-    mcu_printf("    HSM    READY : %d\n",    hsm_ready);
 #endif
-}
-
-#endif  // ( MCU_BSP_SUPPORT_APP_BASE == 1 )
-
