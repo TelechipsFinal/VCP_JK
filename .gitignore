@@ -1,0 +1,12 @@
+cat <<EOF > .gitignore
+build/
+output/
+*.rom
+*.rom.signed
+*.bin
+*.map
+*.o
+*.out
+*.log
+.eula_accepted
+EOF
