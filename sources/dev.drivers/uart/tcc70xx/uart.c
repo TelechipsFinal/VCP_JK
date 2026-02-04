@@ -633,7 +633,7 @@ void UART_Init
 {
     UART_Param.sCh          = UART_DEBUG_CH;
     UART_Param.sPriority    = GIC_PRIORITY_NO_MEAN;
-    UART_Param.sBaudrate    = 115200U;
+    UART_Param.sBaudrate    = 921600U;
     UART_Param.sMode        = UART_POLLING_MODE;
     UART_Param.sCtsRts      = UART_CTSRTS_OFF;
 #if ( VCP_MODULE_BOARD == 1 )
