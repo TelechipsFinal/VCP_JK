@@ -139,8 +139,13 @@ static void AppTaskCreate(void) {
 static void Mic_ANC_Task(void * pArg) {
     (void)pArg;
     uint32 buffer_addr = (uint32)(&gAdcDmaBuffer[0]);
-    static int stage1_val = 1550, stage2_val = 1550;
-    const int alpha = 3;
+    
+    static int stage1_val = 1550; // stage2 변수 삭제
+    
+    // [핵심 수정 1] Alpha를 높여서 반응 속도를 올림 (20 -> 50)
+    // 값이 클수록 지연이 줄어들지만 고주파가 덜 깎입니다. 타협점이 필요합니다.
+    const int alpha = 50; 
+    const int bias = 1550;
 
     mcu_printf("\n[Polling Mode] Initializing HW...\n");
     
@@ -164,13 +169,13 @@ static void Mic_ANC_Task(void * pArg) {
         if (gTimerTriggerFlag == 1) {
             gTimerTriggerFlag = 0; 
 
+            // ADC 및 DMA 트리거 (기존 동일)
             ADC_DMA_TEST_REG(0)->poDmaChannel[0].xcCfg.cfBreg.cfChEnable = 0;
             ADC_DMA_TEST_REG(0)->poIrqItcClear.duNreg = 0x01;
             ADC_TEST_REG(0)->atAdcClr = 0xFFFFFFFF;
             ADC_DMA_TEST_REG(0)->poDmaChannel[0].xcDestAddr = buffer_addr; 
             ADC_DMA_TEST_REG(0)->poDmaChannel[0].xcCtrl.rlBreg.scTransferSize = 1; 
             ADC_DMA_TEST_REG(0)->poDmaChannel[0].xcCfg.cfBreg.cfChEnable = 1;
-            
             ADC_TEST_REG(0)->atAdcCmd.cuNreg = (1 << 3) | (0 << 20); 
 
             volatile uint32 timeout = 10000;
@@ -179,15 +184,26 @@ static void Mic_ANC_Task(void * pArg) {
             Local_CleanInvalidateDCache(buffer_addr, 32);
             int raw_val = (int)(gAdcDmaBuffer[0] & 0xFFFF);
             
-            stage1_val = (alpha * raw_val + (10 - alpha) * stage1_val) / 10;
-            stage2_val = (alpha * stage1_val + (10 - alpha) * stage2_val) / 10;
+            /* --- [수정된 ANC 로직: 1단계 필터] --- */
+            // [핵심 수정 2] 2단계(stage2)를 제거하고 1단계만 수행하여 위상 지연을 최소화
+            stage1_val = (alpha * raw_val + (100 - alpha) * stage1_val) / 100;
+            
+            // 2. 위상 반전 (Anti-Noise)
+            // stage2가 아닌 stage1을 바로 사용하여 즉각적인 반대 파형 생성
+            int anti_noise = bias - (stage1_val - bias);
+            
+            // 3. 신호 중첩
+            int cancelled_val = raw_val + (anti_noise - bias);
             
             if (++g_SkipCounter >= SKIP_STEP) {
-                mcu_printf("%d,%d\n", raw_val, stage2_val);
+                // 데이터 전송
+                mcu_printf("%d,%d,%d\n", raw_val, stage1_val, cancelled_val);
                 g_SkipCounter = 0;
             }
         }
-        (void)SAL_TaskSleep(0); 
+        (void)SAL_TaskSleep(0);
     }
 }
+
 #endif
+
